@@ -19,7 +19,6 @@ COMMENT_REQUIREMENTS = (
     'bluepy',
     'opencv-python',
     'python-lirc',
-    'gattlib',
     'pyuserinput',
     'evdev',
     'pycups',
@@ -33,35 +32,46 @@ COMMENT_REQUIREMENTS = (
     'i2csense',
     'credstash',
     'bme680',
-    'homekit',
     'py_noaa',
 )
 
 TEST_REQUIREMENTS = (
+    'aioambient',
     'aioautomatic',
     'aiohttp_cors',
     'aiohue',
+    'aiounifi',
     'apns2',
     'caldav',
     'coinmarketcap',
     'defusedxml',
     'dsmr_parser',
+    'eebrightbox',
+    'emulated_roku',
+    'enturclient',
     'ephem',
     'evohomeclient',
-    'feedparser',
+    'feedparser-homeassistant',
     'foobot_async',
+    'geojson_client',
+    'georss_client',
     'gTTS-token',
+    'ha-ffmpeg',
     'hangups',
     'HAP-python',
-    'ha-ffmpeg',
     'haversine',
     'hbmqtt',
+    'hdate',
     'holidays',
     'home-assistant-frontend',
+    'homekit',
     'homematicip',
     'influxdb',
+    'jsonpath',
     'libpurecoollink',
     'libsoundtouch',
+    'luftdaten',
+    'mbddns',
     'mficlient',
     'numpy',
     'paho-mqtt',
@@ -74,35 +84,49 @@ TEST_REQUIREMENTS = (
     'pyblackbird',
     'pydeconz',
     'pydispatcher',
-    'PyJWT',
+    'pyhomematic',
     'pylitejet',
     'pymonoprice',
     'pynx584',
+    'pyopenuv',
     'pyotp',
+    'pyps4-homeassistant',
+    'pysmartapp',
+    'pysmartthings',
+    'pysonos',
     'pyqwikswitch',
     'PyRMVtransport',
+    'PyTransportNSW',
+    'pyspcwebgw',
     'python-forecastio',
     'python-nest',
-    'pytradfri\[async\]',
+    'python_awair',
+    'pytradfri\\[async\\]',
     'pyunifi',
     'pyupnp-async',
     'pywebpush',
+    'regenmaschine',
     'restrictedpython',
     'rflink',
     'ring_doorbell',
     'rxv',
+    'simplisafe-python',
     'sleepyq',
-    'SoCo',
+    'smhi-pkg',
     'somecomfort',
     'sqlalchemy',
+    'srpenergy',
     'statsd',
     'uvcclient',
-    'voluptuous-serialize',
+    'vsure',
     'warrant',
-    'yahoo-finance',
     'pythonwhois',
     'wakeonlan',
-    'vultr'
+    'vultr',
+    'YesssSMS',
+    'ruamel.yaml',
+    'zigpy',
+    'bellows',
 )
 
 IGNORE_PACKAGES = (
@@ -117,8 +141,8 @@ IGNORE_REQ = (
     'colorama<=1',  # Windows only requirement in check_config
 )
 
-URL_PIN = ('https://home-assistant.io/developers/code_review_platform/'
-           '#1-requirements')
+URL_PIN = ('https://developers.home-assistant.io/docs/'
+           'creating_platform_code_review.html#1-requirements')
 
 
 CONSTRAINT_PATH = os.path.join(os.path.dirname(__file__),
@@ -131,6 +155,9 @@ enum34==1000000000.0.0
 
 # This is a old unmaintained library and is replaced with pycryptodome
 pycrypto==1000000000.0.0
+
+# Contains code to modify Home Assistant to work around our rules
+python-systemair-savecair==1000000000.0.0
 """
 
 
@@ -191,7 +218,7 @@ def gather_modules():
         for req in module.REQUIREMENTS:
             if req in IGNORE_REQ:
                 continue
-            if '://' in req:
+            if '://' in req and 'pyharmony' not in req:
                 errors.append(
                     "{}[Only pypi dependencies are allowed: {}]".format(
                         package, req))

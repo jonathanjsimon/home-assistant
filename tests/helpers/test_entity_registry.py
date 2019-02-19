@@ -4,9 +4,10 @@ from unittest.mock import patch
 
 import pytest
 
+from homeassistant.core import valid_entity_id
 from homeassistant.helpers import entity_registry
 
-from tests.common import mock_registry
+from tests.common import mock_registry, flush_store
 
 
 YAML__OPEN_PATH = 'homeassistant.util.yaml.open'
@@ -77,8 +78,7 @@ async def test_loading_saving_data(hass, registry):
 
     # Now load written data in new registry
     registry2 = entity_registry.EntityRegistry(hass)
-    registry2._store = registry._store
-
+    await flush_store(registry._store)
     await registry2.async_load()
 
     # Ensure same order
@@ -186,6 +186,17 @@ async def test_updating_config_entry_id(registry):
     assert entry2.config_entry_id == 'mock-id-2'
 
 
+async def test_removing_config_entry_id(registry):
+    """Test that we update config entry id in registry."""
+    entry = registry.async_get_or_create(
+        'light', 'hue', '5678', config_entry_id='mock-id-1')
+    assert entry.config_entry_id == 'mock-id-1'
+    registry.async_clear_config_entry('mock-id-1')
+
+    entry = registry.entities[entry.entity_id]
+    assert entry.config_entry_id is None
+
+
 async def test_migration(hass):
     """Test migration from old data to new."""
     old_conf = {
@@ -212,3 +223,45 @@ async def test_migration(hass):
     assert entry.name == 'Test Name'
     assert entry.disabled_by == 'hass'
     assert entry.config_entry_id == 'test-config-id'
+
+
+async def test_loading_invalid_entity_id(hass, hass_storage):
+    """Test we autofix invalid entity IDs."""
+    hass_storage[entity_registry.STORAGE_KEY] = {
+        'version': entity_registry.STORAGE_VERSION,
+        'data': {
+            'entities': [
+                {
+                    'entity_id': 'test.invalid__middle',
+                    'platform': 'super_platform',
+                    'unique_id': 'id-invalid-middle',
+                    'name': 'registry override',
+                }, {
+                    'entity_id': 'test.invalid_end_',
+                    'platform': 'super_platform',
+                    'unique_id': 'id-invalid-end',
+                }, {
+                    'entity_id': 'test._invalid_start',
+                    'platform': 'super_platform',
+                    'unique_id': 'id-invalid-start',
+                }
+            ]
+        }
+    }
+
+    registry = await entity_registry.async_get_registry(hass)
+
+    entity_invalid_middle = registry.async_get_or_create(
+        'test', 'super_platform', 'id-invalid-middle')
+
+    assert valid_entity_id(entity_invalid_middle.entity_id)
+
+    entity_invalid_end = registry.async_get_or_create(
+        'test', 'super_platform', 'id-invalid-end')
+
+    assert valid_entity_id(entity_invalid_end.entity_id)
+
+    entity_invalid_start = registry.async_get_or_create(
+        'test', 'super_platform', 'id-invalid-start')
+
+    assert valid_entity_id(entity_invalid_start.entity_id)

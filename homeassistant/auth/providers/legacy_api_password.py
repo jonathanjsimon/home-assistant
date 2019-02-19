@@ -4,16 +4,19 @@ Support Legacy API password auth provider.
 It will be removed when auth system production ready
 """
 import hmac
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional, cast, TYPE_CHECKING
 
 import voluptuous as vol
 
-from homeassistant.components.http import HomeAssistantHTTP  # noqa: F401
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 
 from . import AuthProvider, AUTH_PROVIDER_SCHEMA, AUTH_PROVIDERS, LoginFlow
-from ..models import Credentials, UserMeta
+from .. import AuthManager
+from ..models import Credentials, UserMeta, User
+
+if TYPE_CHECKING:
+    from homeassistant.components.http import HomeAssistantHTTP  # noqa: F401
 
 
 USER_SCHEMA = vol.Schema({
@@ -24,11 +27,29 @@ USER_SCHEMA = vol.Schema({
 CONFIG_SCHEMA = AUTH_PROVIDER_SCHEMA.extend({
 }, extra=vol.PREVENT_EXTRA)
 
-LEGACY_USER = 'homeassistant'
+LEGACY_USER_NAME = 'Legacy API password user'
 
 
 class InvalidAuthError(HomeAssistantError):
     """Raised when submitting invalid authentication."""
+
+
+async def async_get_user(hass: HomeAssistant) -> User:
+    """Return the legacy API password user."""
+    auth = cast(AuthManager, hass.auth)  # type: ignore
+    found = None
+
+    for prv in auth.auth_providers:
+        if prv.type == 'legacy_api_password':
+            found = prv
+            break
+
+    if found is None:
+        raise ValueError('Legacy API password provider not found')
+
+    return await auth.async_get_or_create_user(
+        await found.async_get_or_create_credentials({})
+    )
 
 
 @AUTH_PROVIDERS.register('legacy_api_password')
@@ -52,23 +73,21 @@ class LegacyApiPasswordAuthProvider(AuthProvider):
 
     async def async_get_or_create_credentials(
             self, flow_result: Dict[str, str]) -> Credentials:
-        """Return LEGACY_USER always."""
-        for credential in await self.async_credentials():
-            if credential.data['username'] == LEGACY_USER:
-                return credential
+        """Return credentials for this login."""
+        credentials = await self.async_credentials()
+        if credentials:
+            return credentials[0]
 
-        return self.async_create_credentials({
-            'username': LEGACY_USER
-        })
+        return self.async_create_credentials({})
 
     async def async_user_meta_for_credentials(
             self, credentials: Credentials) -> UserMeta:
         """
-        Set name as LEGACY_USER always.
+        Return info for the user.
 
         Will be used to populate info when creating a new user.
         """
-        return UserMeta(name=LEGACY_USER, is_active=True)
+        return UserMeta(name=LEGACY_USER_NAME, is_active=True)
 
 
 class LegacyLoginFlow(LoginFlow):

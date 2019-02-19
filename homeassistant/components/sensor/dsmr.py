@@ -13,20 +13,23 @@ import voluptuous as vol
 
 from homeassistant.components.sensor import PLATFORM_SCHEMA
 from homeassistant.const import (
-    CONF_HOST, CONF_PORT, EVENT_HOMEASSISTANT_STOP, STATE_UNKNOWN)
+    CONF_HOST, CONF_PORT, EVENT_HOMEASSISTANT_STOP)
 from homeassistant.core import CoreState
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity import Entity
 
 _LOGGER = logging.getLogger(__name__)
 
-REQUIREMENTS = ['dsmr_parser==0.11']
+REQUIREMENTS = ['dsmr_parser==0.12']
 
 CONF_DSMR_VERSION = 'dsmr_version'
 CONF_RECONNECT_INTERVAL = 'reconnect_interval'
+CONF_PRECISION = 'precision'
 
 DEFAULT_DSMR_VERSION = '2.2'
 DEFAULT_PORT = '/dev/ttyUSB0'
+DEFAULT_PRECISION = 3
+
 DOMAIN = 'dsmr'
 
 ICON_GAS = 'mdi:fire'
@@ -45,12 +48,12 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_DSMR_VERSION, default=DEFAULT_DSMR_VERSION): vol.All(
         cv.string, vol.In(['5', '4', '2.2'])),
     vol.Optional(CONF_RECONNECT_INTERVAL, default=30): int,
+    vol.Optional(CONF_PRECISION, default=DEFAULT_PRECISION): vol.Coerce(int),
 })
 
 
-@asyncio.coroutine
-def async_setup_platform(hass, config, async_add_entities,
-                         discovery_info=None):
+async def async_setup_platform(hass, config, async_add_entities,
+                               discovery_info=None):
     """Set up the DSMR sensor."""
     # Suppress logging
     logging.getLogger('dsmr_parser').setLevel(logging.ERROR)
@@ -147,7 +150,7 @@ def async_setup_platform(hass, config, async_add_entities,
     ]
 
     # Generate device entities
-    devices = [DSMREntity(name, obis) for name, obis in obis_mapping]
+    devices = [DSMREntity(name, obis, config) for name, obis in obis_mapping]
 
     # Protocol version specific obis
     if dsmr_version in ('4', '5'):
@@ -157,8 +160,8 @@ def async_setup_platform(hass, config, async_add_entities,
 
     # Add gas meter reading and derivative for usage
     devices += [
-        DSMREntity('Gas Consumption', gas_obis),
-        DerivativeDSMREntity('Hourly Gas Consumption', gas_obis),
+        DSMREntity('Gas Consumption', gas_obis, config),
+        DerivativeDSMREntity('Hourly Gas Consumption', gas_obis, config),
     ]
 
     async_add_entities(devices)
@@ -168,7 +171,7 @@ def async_setup_platform(hass, config, async_add_entities,
         # Make all device entities aware of new telegram
         for device in devices:
             device.telegram = telegram
-            hass.async_add_job(device.async_update_ha_state())
+            hass.async_create_task(device.async_update_ha_state())
 
     # Creates an asyncio.Protocol factory for reading DSMR telegrams from
     # serial and calls update_entities_telegram to update entities on arrival
@@ -182,13 +185,12 @@ def async_setup_platform(hass, config, async_add_entities,
             create_dsmr_reader, config[CONF_PORT], config[CONF_DSMR_VERSION],
             update_entities_telegram, loop=hass.loop)
 
-    @asyncio.coroutine
-    def connect_and_reconnect():
+    async def connect_and_reconnect():
         """Connect to DSMR and keep reconnecting until Home Assistant stops."""
         while hass.state != CoreState.stopping:
             # Start DSMR asyncio.Protocol reader
             try:
-                transport, protocol = yield from hass.loop.create_task(
+                transport, protocol = await hass.loop.create_task(
                     reader_factory())
             except (serial.serialutil.SerialException, ConnectionRefusedError,
                     TimeoutError):
@@ -203,7 +205,7 @@ def async_setup_platform(hass, config, async_add_entities,
                     EVENT_HOMEASSISTANT_STOP, transport.close)
 
                 # Wait for reader to close
-                yield from protocol.wait_closed()
+                await protocol.wait_closed()
 
             if hass.state != CoreState.stopping:
                 # Unexpected disconnect
@@ -216,8 +218,8 @@ def async_setup_platform(hass, config, async_add_entities,
                 update_entities_telegram({})
 
                 # throttle reconnect attempts
-                yield from asyncio.sleep(config[CONF_RECONNECT_INTERVAL],
-                                         loop=hass.loop)
+                await asyncio.sleep(config[CONF_RECONNECT_INTERVAL],
+                                    loop=hass.loop)
 
     # Can't be hass.async_add_job because job runs forever
     hass.loop.create_task(connect_and_reconnect())
@@ -226,10 +228,11 @@ def async_setup_platform(hass, config, async_add_entities,
 class DSMREntity(Entity):
     """Entity reading values from DSMR telegram."""
 
-    def __init__(self, name, obis):
+    def __init__(self, name, obis, config):
         """Initialize entity."""
         self._name = name
         self._obis = obis
+        self._config = config
         self.telegram = {}
 
     def get_dsmr_object_attr(self, attribute):
@@ -269,10 +272,15 @@ class DSMREntity(Entity):
         if self._obis == obis.ELECTRICITY_ACTIVE_TARIFF:
             return self.translate_tariff(value)
 
+        try:
+            value = round(float(value), self._config[CONF_PRECISION])
+        except TypeError:
+            pass
+
         if value is not None:
             return value
 
-        return STATE_UNKNOWN
+        return None
 
     @property
     def unit_of_measurement(self):
@@ -289,7 +297,7 @@ class DSMREntity(Entity):
         if value == '0001':
             return 'low'
 
-        return STATE_UNKNOWN
+        return None
 
 
 class DerivativeDSMREntity(DSMREntity):
@@ -302,15 +310,14 @@ class DerivativeDSMREntity(DSMREntity):
 
     _previous_reading = None
     _previous_timestamp = None
-    _state = STATE_UNKNOWN
+    _state = None
 
     @property
     def state(self):
         """Return the calculated current hourly rate."""
         return self._state
 
-    @asyncio.coroutine
-    def async_update(self):
+    async def async_update(self):
         """Recalculate hourly rate if timestamp has changed.
 
         DSMR updates gas meter reading every hour. Along with the new

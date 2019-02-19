@@ -2,17 +2,23 @@
 import asyncio
 import logging
 from collections import OrderedDict
+from datetime import timedelta
 from typing import Any, Dict, List, Optional, Tuple, cast
 
 import jwt
 
 from homeassistant import data_entry_flow
+from homeassistant.auth.const import ACCESS_TOKEN_EXPIRATION
 from homeassistant.core import callback, HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from . import auth_store, models
+from .const import GROUP_ID_ADMIN
 from .mfa_modules import auth_mfa_module_from_config, MultiFactorAuthModule
 from .providers import auth_provider_from_config, AuthProvider, LoginFlow
+
+EVENT_USER_ADDED = 'user_added'
+EVENT_USER_REMOVED = 'user_removed'
 
 _LOGGER = logging.getLogger(__name__)
 _MfaModuleDict = Dict[str, MultiFactorAuthModule]
@@ -73,11 +79,6 @@ class AuthManager:
             self._async_finish_login_flow)
 
     @property
-    def active(self) -> bool:
-        """Return if any auth providers are registered."""
-        return bool(self._providers)
-
-    @property
     def support_legacy(self) -> bool:
         """
         Return if legacy_api_password auth providers are registered.
@@ -112,6 +113,10 @@ class AuthManager:
         """Retrieve a user."""
         return await self._store.async_get_user(user_id)
 
+    async def async_get_group(self, group_id: str) -> Optional[models.Group]:
+        """Retrieve all groups."""
+        return await self._store.async_get_group(group_id)
+
     async def async_get_user_by_credentials(
             self, credentials: models.Credentials) -> Optional[models.User]:
         """Get a user by credential, return None if not found."""
@@ -122,25 +127,41 @@ class AuthManager:
 
         return None
 
-    async def async_create_system_user(self, name: str) -> models.User:
+    async def async_create_system_user(
+            self, name: str,
+            group_ids: Optional[List[str]] = None) -> models.User:
         """Create a system user."""
-        return await self._store.async_create_user(
+        user = await self._store.async_create_user(
             name=name,
             system_generated=True,
             is_active=True,
+            group_ids=group_ids or [],
         )
+
+        self.hass.bus.async_fire(EVENT_USER_ADDED, {
+            'user_id': user.id
+        })
+
+        return user
 
     async def async_create_user(self, name: str) -> models.User:
         """Create a user."""
         kwargs = {
             'name': name,
             'is_active': True,
+            'group_ids': [GROUP_ID_ADMIN]
         }  # type: Dict[str, Any]
 
         if await self._user_should_be_owner():
             kwargs['is_owner'] = True
 
-        return await self._store.async_create_user(**kwargs)
+        user = await self._store.async_create_user(**kwargs)
+
+        self.hass.bus.async_fire(EVENT_USER_ADDED, {
+            'user_id': user.id
+        })
+
+        return user
 
     async def async_get_or_create_user(self, credentials: models.Credentials) \
             -> models.User:
@@ -160,11 +181,18 @@ class AuthManager:
         info = await auth_provider.async_user_meta_for_credentials(
             credentials)
 
-        return await self._store.async_create_user(
+        user = await self._store.async_create_user(
             credentials=credentials,
             name=info.name,
             is_active=info.is_active,
+            group_ids=[GROUP_ID_ADMIN],
         )
+
+        self.hass.bus.async_fire(EVENT_USER_ADDED, {
+            'user_id': user.id
+        })
+
+        return user
 
     async def async_link_user(self, user: models.User,
                               credentials: models.Credentials) -> None:
@@ -182,6 +210,21 @@ class AuthManager:
             await asyncio.wait(tasks)
 
         await self._store.async_remove_user(user)
+
+        self.hass.bus.async_fire(EVENT_USER_REMOVED, {
+            'user_id': user.id
+        })
+
+    async def async_update_user(self, user: models.User,
+                                name: Optional[str] = None,
+                                group_ids: Optional[List[str]] = None) -> None:
+        """Update a user."""
+        kwargs = {}  # type: Dict[str,Any]
+        if name is not None:
+            kwargs['name'] = name
+        if group_ids is not None:
+            kwargs['group_ids'] = group_ids
+        await self._store.async_update_user(user, **kwargs)
 
     async def async_activate_user(self, user: models.User) -> None:
         """Activate a user."""
@@ -242,8 +285,12 @@ class AuthManager:
                 modules[module_id] = module.name
         return modules
 
-    async def async_create_refresh_token(self, user: models.User,
-                                         client_id: Optional[str] = None) \
+    async def async_create_refresh_token(
+            self, user: models.User, client_id: Optional[str] = None,
+            client_name: Optional[str] = None,
+            client_icon: Optional[str] = None,
+            token_type: Optional[str] = None,
+            access_token_expiration: timedelta = ACCESS_TOKEN_EXPIRATION) \
             -> models.RefreshToken:
         """Create a new refresh token for a user."""
         if not user.is_active:
@@ -254,10 +301,36 @@ class AuthManager:
                 'System generated users cannot have refresh tokens connected '
                 'to a client.')
 
-        if not user.system_generated and client_id is None:
+        if token_type is None:
+            if user.system_generated:
+                token_type = models.TOKEN_TYPE_SYSTEM
+            else:
+                token_type = models.TOKEN_TYPE_NORMAL
+
+        if user.system_generated != (token_type == models.TOKEN_TYPE_SYSTEM):
+            raise ValueError(
+                'System generated users can only have system type '
+                'refresh tokens')
+
+        if token_type == models.TOKEN_TYPE_NORMAL and client_id is None:
             raise ValueError('Client is required to generate a refresh token.')
 
-        return await self._store.async_create_refresh_token(user, client_id)
+        if (token_type == models.TOKEN_TYPE_LONG_LIVED_ACCESS_TOKEN and
+                client_name is None):
+            raise ValueError('Client_name is required for long-lived access '
+                             'token')
+
+        if token_type == models.TOKEN_TYPE_LONG_LIVED_ACCESS_TOKEN:
+            for token in user.refresh_tokens.values():
+                if (token.client_name == client_name and token.token_type ==
+                        models.TOKEN_TYPE_LONG_LIVED_ACCESS_TOKEN):
+                    # Each client_name can only have one
+                    # long_lived_access_token type of refresh token
+                    raise ValueError('{} already exists'.format(client_name))
+
+        return await self._store.async_create_refresh_token(
+            user, client_id, client_name, client_icon,
+            token_type, access_token_expiration)
 
     async def async_get_refresh_token(
             self, token_id: str) -> Optional[models.RefreshToken]:
@@ -277,13 +350,16 @@ class AuthManager:
 
     @callback
     def async_create_access_token(self,
-                                  refresh_token: models.RefreshToken) -> str:
+                                  refresh_token: models.RefreshToken,
+                                  remote_ip: Optional[str] = None) -> str:
         """Create a new access token."""
-        # pylint: disable=no-self-use
+        self._store.async_log_refresh_token_usage(refresh_token, remote_ip)
+
+        now = dt_util.utcnow()
         return jwt.encode({
             'iss': refresh_token.id,
-            'iat': dt_util.utcnow(),
-            'exp': dt_util.utcnow() + refresh_token.access_token_expiration,
+            'iat': now,
+            'exp': now + refresh_token.access_token_expiration,
         }, refresh_token.jwt_key, algorithm='HS256').decode()
 
     async def async_validate_access_token(

@@ -26,7 +26,8 @@ ATTR_DURATION = 'duration'
 ATTR_DISTANCE = 'distance'
 ATTR_ROUTE = 'route'
 
-CONF_ATTRIBUTION = "Data provided by the Waze.com"
+ATTRIBUTION = "Powered by Waze"
+
 CONF_DESTINATION = 'destination'
 CONF_ORIGIN = 'origin'
 CONF_INCL_FILTER = 'incl_filter'
@@ -38,9 +39,10 @@ DEFAULT_REALTIME = True
 
 ICON = 'mdi:car'
 
-REGIONS = ['US', 'NA', 'EU', 'IL']
+REGIONS = ['US', 'NA', 'EU', 'IL', 'AU']
 
 SCAN_INTERVAL = timedelta(minutes=5)
+MIN_TIME_BETWEEN_UPDATES = timedelta(minutes=5)
 
 TRACKABLE_DOMAINS = ['device_tracker', 'sensor', 'zone']
 
@@ -71,7 +73,8 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     add_entities([sensor])
 
     # Wait until start event is sent to load this component.
-    hass.bus.listen_once(EVENT_HOMEASSISTANT_START, sensor.update)
+    hass.bus.listen_once(
+        EVENT_HOMEASSISTANT_START, lambda _: sensor.update())
 
 
 def _get_location_from_attributes(state):
@@ -136,7 +139,7 @@ class WazeTravelTime(Entity):
         if self._state is None:
             return None
 
-        res = {ATTR_ATTRIBUTION: CONF_ATTRIBUTION}
+        res = {ATTR_ATTRIBUTION: ATTRIBUTION}
         if 'duration' in self._state:
             res[ATTR_DURATION] = self._state['duration']
         if 'distance' in self._state:
@@ -182,7 +185,7 @@ class WazeTravelTime(Entity):
 
         return friendly_name
 
-    @Throttle(SCAN_INTERVAL)
+    @Throttle(MIN_TIME_BETWEEN_UPDATES)
     def update(self):
         """Fetch new state data for the sensor."""
         import WazeRouteCalculator

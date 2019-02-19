@@ -2,7 +2,6 @@
 import ctypes
 import os
 import shutil
-import json
 from unittest.mock import patch, PropertyMock
 
 import pytest
@@ -11,10 +10,10 @@ import requests
 import homeassistant.components.http as http
 import homeassistant.components.tts as tts
 from homeassistant.components.tts.demo import DemoProvider
-from homeassistant.components.media_player import (
+from homeassistant.components.media_player.const import (
     SERVICE_PLAY_MEDIA, MEDIA_TYPE_MUSIC, ATTR_MEDIA_CONTENT_ID,
     ATTR_MEDIA_CONTENT_TYPE, DOMAIN as DOMAIN_MP)
-from homeassistant.setup import setup_component
+from homeassistant.setup import setup_component, async_setup_component
 
 from tests.common import (
     get_test_home_assistant, get_test_instance_port, assert_setup_component,
@@ -97,10 +96,9 @@ class TestTTS:
 
         assert len(calls) == 1
         assert calls[0].data[ATTR_MEDIA_CONTENT_TYPE] == MEDIA_TYPE_MUSIC
-        assert calls[0].data[ATTR_MEDIA_CONTENT_ID].find(
-            "/api/tts_proxy/265944c108cbb00b2a621be5930513e03a0bb2cd"
-            "_en_-_demo.mp3") \
-            != -1
+        assert calls[0].data[ATTR_MEDIA_CONTENT_ID] == \
+            "{}/api/tts_proxy/265944c108cbb00b2a621be5930513e03a0bb2cd" \
+            "_en_-_demo.mp3".format(self.hass.config.api.base_url)
         assert os.path.isfile(os.path.join(
             self.default_tts_cache,
             "265944c108cbb00b2a621be5930513e03a0bb2cd_en_-_demo.mp3"))
@@ -126,10 +124,9 @@ class TestTTS:
 
         assert len(calls) == 1
         assert calls[0].data[ATTR_MEDIA_CONTENT_TYPE] == MEDIA_TYPE_MUSIC
-        assert calls[0].data[ATTR_MEDIA_CONTENT_ID].find(
-            "/api/tts_proxy/265944c108cbb00b2a621be5930513e03a0bb2cd"
-            "_de_-_demo.mp3") \
-            != -1
+        assert calls[0].data[ATTR_MEDIA_CONTENT_ID] == \
+            "{}/api/tts_proxy/265944c108cbb00b2a621be5930513e03a0bb2cd" \
+            "_de_-_demo.mp3".format(self.hass.config.api.base_url)
         assert os.path.isfile(os.path.join(
             self.default_tts_cache,
             "265944c108cbb00b2a621be5930513e03a0bb2cd_de_-_demo.mp3"))
@@ -167,10 +164,9 @@ class TestTTS:
 
         assert len(calls) == 1
         assert calls[0].data[ATTR_MEDIA_CONTENT_TYPE] == MEDIA_TYPE_MUSIC
-        assert calls[0].data[ATTR_MEDIA_CONTENT_ID].find(
-            "/api/tts_proxy/265944c108cbb00b2a621be5930513e03a0bb2cd"
-            "_de_-_demo.mp3") \
-            != -1
+        assert calls[0].data[ATTR_MEDIA_CONTENT_ID] == \
+            "{}/api/tts_proxy/265944c108cbb00b2a621be5930513e03a0bb2cd" \
+            "_de_-_demo.mp3".format(self.hass.config.api.base_url)
         assert os.path.isfile(os.path.join(
             self.default_tts_cache,
             "265944c108cbb00b2a621be5930513e03a0bb2cd_de_-_demo.mp3"))
@@ -225,10 +221,9 @@ class TestTTS:
 
         assert len(calls) == 1
         assert calls[0].data[ATTR_MEDIA_CONTENT_TYPE] == MEDIA_TYPE_MUSIC
-        assert calls[0].data[ATTR_MEDIA_CONTENT_ID].find(
-            "/api/tts_proxy/265944c108cbb00b2a621be5930513e03a0bb2cd"
-            "_de_{0}_demo.mp3".format(opt_hash)) \
-            != -1
+        assert calls[0].data[ATTR_MEDIA_CONTENT_ID] == \
+            "{}/api/tts_proxy/265944c108cbb00b2a621be5930513e03a0bb2cd" \
+            "_de_{}_demo.mp3".format(self.hass.config.api.base_url, opt_hash)
         assert os.path.isfile(os.path.join(
             self.default_tts_cache,
             "265944c108cbb00b2a621be5930513e03a0bb2cd_de_{0}_demo.mp3".format(
@@ -259,10 +254,9 @@ class TestTTS:
 
         assert len(calls) == 1
         assert calls[0].data[ATTR_MEDIA_CONTENT_TYPE] == MEDIA_TYPE_MUSIC
-        assert calls[0].data[ATTR_MEDIA_CONTENT_ID].find(
-            "/api/tts_proxy/265944c108cbb00b2a621be5930513e03a0bb2cd"
-            "_de_{0}_demo.mp3".format(opt_hash)) \
-            != -1
+        assert calls[0].data[ATTR_MEDIA_CONTENT_ID] == \
+            "{}/api/tts_proxy/265944c108cbb00b2a621be5930513e03a0bb2cd" \
+            "_de_{}_demo.mp3".format(self.hass.config.api.base_url, opt_hash)
         assert os.path.isfile(os.path.join(
             self.default_tts_cache,
             "265944c108cbb00b2a621be5930513e03a0bb2cd_de_{0}_demo.mp3".format(
@@ -297,6 +291,32 @@ class TestTTS:
             self.default_tts_cache,
             "265944c108cbb00b2a621be5930513e03a0bb2cd_de_{0}_demo.mp3".format(
                 opt_hash)))
+
+    def test_setup_component_and_test_service_with_base_url_set(self):
+        """Set up the demo platform with ``base_url`` set and call service."""
+        calls = mock_service(self.hass, DOMAIN_MP, SERVICE_PLAY_MEDIA)
+
+        config = {
+            tts.DOMAIN: {
+                'platform': 'demo',
+                'base_url': 'http://fnord',
+            }
+        }
+
+        with assert_setup_component(1, tts.DOMAIN):
+            setup_component(self.hass, tts.DOMAIN, config)
+
+        self.hass.services.call(tts.DOMAIN, 'demo_say', {
+            tts.ATTR_MESSAGE: "I person is on front of your door.",
+        })
+        self.hass.block_till_done()
+
+        assert len(calls) == 1
+        assert calls[0].data[ATTR_MEDIA_CONTENT_TYPE] == MEDIA_TYPE_MUSIC
+        assert calls[0].data[ATTR_MEDIA_CONTENT_ID] == \
+            "http://fnord" \
+            "/api/tts_proxy/265944c108cbb00b2a621be5930513e03a0bb2cd" \
+            "_en_-_demo.mp3"
 
     def test_setup_component_and_test_service_clear_cache(self):
         """Set up the demo platform and call service clear cache."""
@@ -507,10 +527,9 @@ class TestTTS:
         self.hass.block_till_done()
 
         assert len(calls) == 1
-        assert calls[0].data[ATTR_MEDIA_CONTENT_ID].find(
-            "/api/tts_proxy/265944c108cbb00b2a621be5930513e03a0bb2cd"
-            "_en_-_demo.mp3") \
-            != -1
+        assert calls[0].data[ATTR_MEDIA_CONTENT_ID] == \
+            "{}/api/tts_proxy/265944c108cbb00b2a621be5930513e03a0bb2cd" \
+            "_en_-_demo.mp3".format(self.hass.config.api.base_url)
 
     @patch('homeassistant.components.tts.demo.DemoProvider.get_tts_audio',
            return_value=(None, None))
@@ -564,45 +583,45 @@ class TestTTS:
         assert req.status_code == 200
         assert req.content == demo_data
 
-    def test_setup_component_and_web_get_url(self):
-        """Set up the demo platform and receive wrong file from web."""
-        config = {
-            tts.DOMAIN: {
-                'platform': 'demo',
-            }
+
+async def test_setup_component_and_web_get_url(hass, hass_client):
+    """Set up the demo platform and receive file from web."""
+    config = {
+        tts.DOMAIN: {
+            'platform': 'demo',
         }
+    }
 
-        with assert_setup_component(1, tts.DOMAIN):
-            setup_component(self.hass, tts.DOMAIN, config)
+    await async_setup_component(hass, tts.DOMAIN, config)
 
-        self.hass.start()
+    client = await hass_client()
 
-        url = ("{}/api/tts_get_url").format(self.hass.config.api.base_url)
-        data = {'platform': 'demo',
-                'message': "I person is on front of your door."}
+    url = "/api/tts_get_url"
+    data = {'platform': 'demo',
+            'message': "I person is on front of your door."}
 
-        req = requests.post(url, data=json.dumps(data))
-        assert req.status_code == 200
-        response = json.loads(req.text)
-        assert response.get('url') == (("{}/api/tts_proxy/265944c108cbb00b2a62"
-                                        "1be5930513e03a0bb2cd_en_-_demo.mp3")
-                                       .format(self.hass.config.api.base_url))
+    req = await client.post(url, json=data)
+    assert req.status == 200
+    response = await req.json()
+    assert response.get('url') == \
+        ("{}/api/tts_proxy/265944c108cbb00b2a62"
+         "1be5930513e03a0bb2cd_en_-_demo.mp3".format(hass.config.api.base_url))
 
-    def test_setup_component_and_web_get_url_bad_config(self):
-        """Set up the demo platform and receive wrong file from web."""
-        config = {
-            tts.DOMAIN: {
-                'platform': 'demo',
-            }
+
+async def test_setup_component_and_web_get_url_bad_config(hass, hass_client):
+    """Set up the demo platform and receive wrong file from web."""
+    config = {
+        tts.DOMAIN: {
+            'platform': 'demo',
         }
+    }
 
-        with assert_setup_component(1, tts.DOMAIN):
-            setup_component(self.hass, tts.DOMAIN, config)
+    await async_setup_component(hass, tts.DOMAIN, config)
 
-        self.hass.start()
+    client = await hass_client()
 
-        url = ("{}/api/tts_get_url").format(self.hass.config.api.base_url)
-        data = {'message': "I person is on front of your door."}
+    url = "/api/tts_get_url"
+    data = {'message': "I person is on front of your door."}
 
-        req = requests.post(url, data=data)
-        assert req.status_code == 400
+    req = await client.post(url, json=data)
+    assert req.status == 400

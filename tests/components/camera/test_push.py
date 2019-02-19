@@ -6,28 +6,27 @@ from datetime import timedelta
 from homeassistant import core as ha
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
-from tests.components.auth import async_setup_auth
 
 
-async def test_bad_posting(aioclient_mock, hass, aiohttp_client):
+async def test_bad_posting(hass, aiohttp_client):
     """Test that posting to wrong api endpoint fails."""
     await async_setup_component(hass, 'camera', {
         'camera': {
             'platform': 'push',
             'name': 'config_test',
+            'webhook_id': 'camera.config_test'
         }})
+    await hass.async_block_till_done()
+    assert hass.states.get('camera.config_test') is not None
 
-    client = await async_setup_auth(hass, aiohttp_client)
+    client = await aiohttp_client(hass.http.app)
 
     # missing file
-    resp = await client.post('/api/camera_push/camera.config_test')
-    assert resp.status == 400
+    async with client.post('/api/webhook/camera.config_test') as resp:
+        assert resp.status == 200  # webhooks always return 200
 
-    files = {'image': io.BytesIO(b'fake')}
-
-    # wrong entity
-    resp = await client.post('/api/camera_push/camera.wrong', data=files)
-    assert resp.status == 400
+    camera_state = hass.states.get('camera.config_test')
+    assert camera_state.state == 'idle'  # no file supplied we are still idle
 
 
 async def test_posting_url(hass, aiohttp_client):
@@ -36,7 +35,9 @@ async def test_posting_url(hass, aiohttp_client):
         'camera': {
             'platform': 'push',
             'name': 'config_test',
+            'webhook_id': 'camera.config_test'
         }})
+    await hass.async_block_till_done()
 
     client = await aiohttp_client(hass.http.app)
     files = {'image': io.BytesIO(b'fake')}
@@ -46,7 +47,9 @@ async def test_posting_url(hass, aiohttp_client):
     assert camera_state.state == 'idle'
 
     # post image
-    resp = await client.post('/api/camera_push/camera.config_test', data=files)
+    resp = await client.post(
+        '/api/webhook/camera.config_test',
+        data=files)
     assert resp.status == 200
 
     # state recording

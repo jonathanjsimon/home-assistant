@@ -1,23 +1,16 @@
-"""
-Support for Buienradar.nl weather service.
-
-For more details about this platform, please refer to the documentation at
-https://home-assistant.io/components/weather.buienradar/
-"""
+"""Support for Buienradar.nl weather service."""
 import logging
-import asyncio
 
 import voluptuous as vol
 
-from homeassistant.components.weather import (
-    WeatherEntity, PLATFORM_SCHEMA, ATTR_FORECAST_CONDITION,
-    ATTR_FORECAST_TEMP, ATTR_FORECAST_TEMP_LOW, ATTR_FORECAST_TIME)
-from homeassistant.const import \
-    CONF_NAME, TEMP_CELSIUS, CONF_LATITUDE, CONF_LONGITUDE
-from homeassistant.helpers import config_validation as cv
 # Reuse data and API logic from the sensor implementation
-from homeassistant.components.sensor.buienradar import (
-    BrData)
+from homeassistant.components.sensor.buienradar import BrData
+from homeassistant.components.weather import (
+    ATTR_FORECAST_CONDITION, ATTR_FORECAST_TEMP, ATTR_FORECAST_TEMP_LOW,
+    ATTR_FORECAST_TIME, PLATFORM_SCHEMA, WeatherEntity)
+from homeassistant.const import (
+    CONF_LATITUDE, CONF_LONGITUDE, CONF_NAME, TEMP_CELSIUS)
+from homeassistant.helpers import config_validation as cv
 
 REQUIREMENTS = ['buienradar==0.91']
 
@@ -55,9 +48,8 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 })
 
 
-@asyncio.coroutine
-def async_setup_platform(hass, config, async_add_entities,
-                         discovery_info=None):
+async def async_setup_platform(hass, config, async_add_entities,
+                               discovery_info=None):
     """Set up the buienradar platform."""
     latitude = config.get(CONF_LATITUDE, hass.config.latitude)
     longitude = config.get(CONF_LONGITUDE, hass.config.longitude)
@@ -86,7 +78,7 @@ def async_setup_platform(hass, config, async_add_entities,
     async_add_entities([BrWeather(data, config)])
 
     # schedule the first update in 1 minute from now:
-    yield from data.schedule_update(1)
+    await data.schedule_update(1)
 
 
 class BrWeather(WeatherEntity):

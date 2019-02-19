@@ -16,16 +16,17 @@ import async_timeout
 import voluptuous as vol
 
 from homeassistant.components.media_player import (
-    ATTR_MEDIA_ENQUEUE, DOMAIN, MEDIA_TYPE_MUSIC, PLATFORM_SCHEMA,
+    MediaPlayerDevice, PLATFORM_SCHEMA)
+from homeassistant.components.media_player.const import (
+    ATTR_MEDIA_ENQUEUE, DOMAIN, MEDIA_TYPE_MUSIC,
     SUPPORT_CLEAR_PLAYLIST, SUPPORT_NEXT_TRACK, SUPPORT_PAUSE, SUPPORT_PLAY,
     SUPPORT_PLAY_MEDIA, SUPPORT_PREVIOUS_TRACK, SUPPORT_SEEK,
     SUPPORT_SELECT_SOURCE, SUPPORT_SHUFFLE_SET, SUPPORT_STOP,
-    SUPPORT_VOLUME_MUTE, SUPPORT_VOLUME_SET, SUPPORT_VOLUME_STEP,
-    MediaPlayerDevice)
+    SUPPORT_VOLUME_MUTE, SUPPORT_VOLUME_SET, SUPPORT_VOLUME_STEP)
 from homeassistant.const import (
     ATTR_ENTITY_ID, CONF_HOST, CONF_HOSTS, CONF_NAME, CONF_PORT,
-    EVENT_HOMEASSISTANT_START, EVENT_HOMEASSISTANT_STOP, STATE_IDLE,
-    STATE_OFF, STATE_PAUSED, STATE_PLAYING)
+    EVENT_HOMEASSISTANT_START, EVENT_HOMEASSISTANT_STOP, STATE_IDLE, STATE_OFF,
+    STATE_PAUSED, STATE_PLAYING)
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
@@ -96,7 +97,7 @@ def _add_player(hass, async_add_entities, host, port=None, name=None):
     @callback
     def _init_player(event=None):
         """Start polling."""
-        hass.async_add_job(player.async_init())
+        hass.async_create_task(player.async_init())
 
     @callback
     def _start_polling(event=None):
@@ -272,7 +273,7 @@ class BluesoundPlayer(MediaPlayerDevice):
 
     def start_polling(self):
         """Start the polling task."""
-        self._polling_task = self._hass.async_add_job(
+        self._polling_task = self._hass.async_create_task(
             self._start_poll_command())
 
     def stop_polling(self):
@@ -779,7 +780,7 @@ class BluesoundPlayer(MediaPlayerDevice):
     @property
     def shuffle(self):
         """Return true if shuffle is active."""
-        return True if self._status.get('shuffle', '0') == '1' else False
+        return self._status.get('shuffle', '0') == '1'
 
     async def async_join(self, master):
         """Join the player to a group."""

@@ -18,10 +18,10 @@ from aiohttp import web
 import voluptuous as vol
 
 from homeassistant.components.http import HomeAssistantView
-from homeassistant.components.media_player import (
+from homeassistant.components.media_player.const import (
     ATTR_MEDIA_CONTENT_ID, ATTR_MEDIA_CONTENT_TYPE, MEDIA_TYPE_MUSIC,
     SERVICE_PLAY_MEDIA)
-from homeassistant.components.media_player import DOMAIN as DOMAIN_MP
+from homeassistant.components.media_player.const import DOMAIN as DOMAIN_MP
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
@@ -29,7 +29,7 @@ from homeassistant.helpers import config_per_platform
 import homeassistant.helpers.config_validation as cv
 from homeassistant.setup import async_prepare_setup_platform
 
-REQUIREMENTS = ['mutagen==1.41.1']
+REQUIREMENTS = ['mutagen==1.42.0']
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +43,7 @@ CONF_CACHE = 'cache'
 CONF_CACHE_DIR = 'cache_dir'
 CONF_LANG = 'language'
 CONF_TIME_MEMORY = 'time_memory'
+CONF_BASE_URL = 'base_url'
 
 DEFAULT_CACHE = True
 DEFAULT_CACHE_DIR = 'tts'
@@ -65,12 +66,14 @@ PLATFORM_SCHEMA = cv.PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_CACHE_DIR, default=DEFAULT_CACHE_DIR): cv.string,
     vol.Optional(CONF_TIME_MEMORY, default=DEFAULT_TIME_MEMORY):
         vol.All(vol.Coerce(int), vol.Range(min=60, max=57600)),
+    vol.Optional(CONF_BASE_URL): cv.string,
 })
+PLATFORM_SCHEMA_BASE = cv.PLATFORM_SCHEMA_BASE.extend(PLATFORM_SCHEMA.schema)
 
 SCHEMA_SERVICE_SAY = vol.Schema({
     vol.Required(ATTR_MESSAGE): cv.string,
     vol.Optional(ATTR_CACHE): cv.boolean,
-    vol.Optional(ATTR_ENTITY_ID): cv.entity_ids,
+    vol.Optional(ATTR_ENTITY_ID): cv.comp_entity_ids,
     vol.Optional(ATTR_LANGUAGE): cv.string,
     vol.Optional(ATTR_OPTIONS): dict,
 })
@@ -87,8 +90,9 @@ async def async_setup(hass, config):
         use_cache = conf.get(CONF_CACHE, DEFAULT_CACHE)
         cache_dir = conf.get(CONF_CACHE_DIR, DEFAULT_CACHE_DIR)
         time_memory = conf.get(CONF_TIME_MEMORY, DEFAULT_TIME_MEMORY)
+        base_url = conf.get(CONF_BASE_URL) or hass.config.api.base_url
 
-        await tts.async_init_cache(use_cache, cache_dir, time_memory)
+        await tts.async_init_cache(use_cache, cache_dir, time_memory, base_url)
     except (HomeAssistantError, KeyError) as err:
         _LOGGER.error("Error on cache init %s", err)
         return False
@@ -180,13 +184,16 @@ class SpeechManager:
         self.use_cache = DEFAULT_CACHE
         self.cache_dir = DEFAULT_CACHE_DIR
         self.time_memory = DEFAULT_TIME_MEMORY
+        self.base_url = None
         self.file_cache = {}
         self.mem_cache = {}
 
-    async def async_init_cache(self, use_cache, cache_dir, time_memory):
+    async def async_init_cache(self, use_cache, cache_dir, time_memory,
+                               base_url):
         """Init config folder and load file cache."""
         self.use_cache = use_cache
         self.time_memory = time_memory
+        self.base_url = base_url
 
         def init_tts_cache_dir(cache_dir):
             """Init cache folder."""
@@ -293,14 +300,13 @@ class SpeechManager:
         # Is file store in file cache
         elif use_cache and key in self.file_cache:
             filename = self.file_cache[key]
-            self.hass.async_add_job(self.async_file_to_mem(key))
+            self.hass.async_create_task(self.async_file_to_mem(key))
         # Load speech from provider into memory
         else:
             filename = await self.async_get_tts_audio(
                 engine, key, message, use_cache, language, options)
 
-        return "{}/api/tts_proxy/{}".format(
-            self.hass.config.api.base_url, filename)
+        return "{}/api/tts_proxy/{}".format(self.base_url, filename)
 
     async def async_get_tts_audio(
             self, engine, key, message, cache, language, options):
@@ -326,7 +332,7 @@ class SpeechManager:
         self._async_store_to_memcache(key, filename, data)
 
         if cache:
-            self.hass.async_add_job(
+            self.hass.async_create_task(
                 self.async_save_tts_audio(key, filename, data))
 
         return filename

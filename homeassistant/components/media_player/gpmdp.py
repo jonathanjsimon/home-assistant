@@ -4,23 +4,24 @@ Support for Google Play Music Desktop Player.
 For more details about this platform, please refer to the documentation at
 https://home-assistant.io/components/media_player.gpmdp/
 """
-import logging
 import json
+import logging
 import socket
 import time
 
 import voluptuous as vol
 
 from homeassistant.components.media_player import (
-    MEDIA_TYPE_MUSIC, SUPPORT_NEXT_TRACK, SUPPORT_PREVIOUS_TRACK,
-    SUPPORT_PAUSE, SUPPORT_VOLUME_SET, SUPPORT_SEEK, SUPPORT_PLAY,
     MediaPlayerDevice, PLATFORM_SCHEMA)
+from homeassistant.components.media_player.const import (
+    MEDIA_TYPE_MUSIC, SUPPORT_NEXT_TRACK, SUPPORT_PAUSE,
+    SUPPORT_PLAY, SUPPORT_PREVIOUS_TRACK, SUPPORT_SEEK, SUPPORT_VOLUME_SET)
 from homeassistant.const import (
-    STATE_PLAYING, STATE_PAUSED, STATE_OFF, CONF_HOST, CONF_PORT, CONF_NAME)
+    CONF_HOST, CONF_NAME, CONF_PORT, STATE_OFF, STATE_PAUSED, STATE_PLAYING)
 import homeassistant.helpers.config_validation as cv
 from homeassistant.util.json import load_json, save_json
 
-REQUIREMENTS = ['websocket-client==0.37.0']
+REQUIREMENTS = ['websocket-client==0.54.0']
 
 _CONFIGURING = {}
 _LOGGER = logging.getLogger(__name__)
@@ -55,9 +56,11 @@ def request_configuration(hass, config, url, add_entities_callback):
         return
     from websocket import create_connection
     websocket = create_connection((url), timeout=1)
-    websocket.send(json.dumps({'namespace': 'connect',
-                               'method': 'connect',
-                               'arguments': ['Home Assistant']}))
+    websocket.send(json.dumps({
+        'namespace': 'connect',
+        'method': 'connect',
+        'arguments': ['Home Assistant']
+    }))
 
     def gpmdp_configuration_callback(callback_data):
         """Handle configuration changes."""
@@ -153,6 +156,7 @@ class GPMDP(MediaPlayerDevice):
         self._duration = None
         self._volume = None
         self._request_id = 0
+        self._available = True
 
     def get_ws(self):
         """Check if the websocket is setup and connected."""
@@ -198,22 +202,31 @@ class GPMDP(MediaPlayerDevice):
     def update(self):
         """Get the latest details from the player."""
         time.sleep(1)
-        playstate = self.send_gpmdp_msg('playback', 'getPlaybackState')
-        if playstate is None:
-            return
-        self._status = PLAYBACK_DICT[str(playstate['value'])]
-        time_data = self.send_gpmdp_msg('playback', 'getCurrentTime')
-        if time_data is not None:
-            self._seek_position = int(time_data['value'] / 1000)
-        track_data = self.send_gpmdp_msg('playback', 'getCurrentTrack')
-        if track_data is not None:
-            self._title = track_data['value']['title']
-            self._artist = track_data['value']['artist']
-            self._albumart = track_data['value']['albumArt']
-            self._duration = int(track_data['value']['duration'] / 1000)
-        volume_data = self.send_gpmdp_msg('volume', 'getVolume')
-        if volume_data is not None:
-            self._volume = volume_data['value'] / 100
+        try:
+            self._available = True
+            playstate = self.send_gpmdp_msg('playback', 'getPlaybackState')
+            if playstate is None:
+                return
+            self._status = PLAYBACK_DICT[str(playstate['value'])]
+            time_data = self.send_gpmdp_msg('playback', 'getCurrentTime')
+            if time_data is not None:
+                self._seek_position = int(time_data['value'] / 1000)
+            track_data = self.send_gpmdp_msg('playback', 'getCurrentTrack')
+            if track_data is not None:
+                self._title = track_data['value']['title']
+                self._artist = track_data['value']['artist']
+                self._albumart = track_data['value']['albumArt']
+                self._duration = int(track_data['value']['duration'] / 1000)
+            volume_data = self.send_gpmdp_msg('volume', 'getVolume')
+            if volume_data is not None:
+                self._volume = volume_data['value'] / 100
+        except OSError:
+            self._available = False
+
+    @property
+    def available(self):
+        """Return if media player is available."""
+        return self._available
 
     @property
     def media_content_type(self):

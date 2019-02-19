@@ -9,11 +9,12 @@ import logging
 import voluptuous as vol
 
 from homeassistant.components.media_player import (
-    SUPPORT_TURN_OFF, SUPPORT_TURN_ON, SUPPORT_VOLUME_MUTE,
-    SUPPORT_SELECT_SOURCE, PLATFORM_SCHEMA, MediaPlayerDevice)
+    MediaPlayerDevice, PLATFORM_SCHEMA)
+from homeassistant.components.media_player.const import (
+    SUPPORT_SELECT_SOURCE, SUPPORT_TURN_OFF, SUPPORT_TURN_ON,
+    SUPPORT_VOLUME_MUTE)
 from homeassistant.const import (
-    STATE_OFF, STATE_ON, CONF_HOST,
-    CONF_NAME, CONF_PASSWORD, CONF_PORT)
+    CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_PORT, STATE_OFF, STATE_ON)
 import homeassistant.helpers.config_validation as cv
 
 REQUIREMENTS = ['pypjlink2==1.2.0']
@@ -87,22 +88,38 @@ class PjLinkDevice(MediaPlayerDevice):
     def projector(self):
         """Create PJLink Projector instance."""
         from pypjlink import Projector
-        projector = Projector.from_address(self._host, self._port,
-                                           self._encoding)
+        projector = Projector.from_address(
+            self._host, self._port, self._encoding)
         projector.authenticate(self._password)
         return projector
 
     def update(self):
         """Get the latest state from the device."""
+        from pypjlink.projector import ProjectorError
         with self.projector() as projector:
-            pwstate = projector.get_power()
-            if pwstate == 'off':
-                self._pwstate = STATE_OFF
-            else:
-                self._pwstate = STATE_ON
-            self._muted = projector.get_mute()[1]
-            self._current_source = \
-                format_input_source(*projector.get_input())
+            try:
+                pwstate = projector.get_power()
+                if pwstate in ('on', 'warm-up'):
+                    self._pwstate = STATE_ON
+                else:
+                    self._pwstate = STATE_OFF
+                self._muted = projector.get_mute()[1]
+                self._current_source = \
+                    format_input_source(*projector.get_input())
+            except KeyError as err:
+                if str(err) == "'OK'":
+                    self._pwstate = STATE_OFF
+                    self._muted = False
+                    self._current_source = None
+                else:
+                    raise
+            except ProjectorError as err:
+                if str(err) == 'unavailable time':
+                    self._pwstate = STATE_OFF
+                    self._muted = False
+                    self._current_source = None
+                else:
+                    raise
 
     @property
     def name(self):

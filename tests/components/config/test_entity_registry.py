@@ -1,4 +1,6 @@
 """Test entity_registry API."""
+from collections import OrderedDict
+
 import pytest
 
 from homeassistant.helpers.entity_registry import RegistryEntry
@@ -11,6 +13,49 @@ def client(hass, hass_ws_client):
     """Fixture that can interact with the config manager API."""
     hass.loop.run_until_complete(entity_registry.async_setup(hass))
     yield hass.loop.run_until_complete(hass_ws_client(hass))
+
+
+async def test_list_entities(hass, client):
+    """Test list entries."""
+    entities = OrderedDict()
+    entities['test_domain.name'] = RegistryEntry(
+        entity_id='test_domain.name',
+        unique_id='1234',
+        platform='test_platform',
+        name='Hello World'
+    )
+    entities['test_domain.no_name'] = RegistryEntry(
+        entity_id='test_domain.no_name',
+        unique_id='6789',
+        platform='test_platform',
+    )
+
+    mock_registry(hass, entities)
+
+    await client.send_json({
+        'id': 5,
+        'type': 'config/entity_registry/list',
+    })
+    msg = await client.receive_json()
+
+    assert msg['result'] == [
+        {
+            'config_entry_id': None,
+            'device_id': None,
+            'disabled_by': None,
+            'entity_id': 'test_domain.name',
+            'name': 'Hello World',
+            'platform': 'test_platform',
+        },
+        {
+            'config_entry_id': None,
+            'device_id': None,
+            'disabled_by': None,
+            'entity_id': 'test_domain.no_name',
+            'name': None,
+            'platform': 'test_platform',
+        }
+    ]
 
 
 async def test_get_entity(hass, client):
@@ -37,6 +82,10 @@ async def test_get_entity(hass, client):
     msg = await client.receive_json()
 
     assert msg['result'] == {
+        'config_entry_id': None,
+        'device_id': None,
+        'disabled_by': None,
+        'platform': 'test_platform',
         'entity_id': 'test_domain.name',
         'name': 'Hello World'
     }
@@ -49,6 +98,10 @@ async def test_get_entity(hass, client):
     msg = await client.receive_json()
 
     assert msg['result'] == {
+        'config_entry_id': None,
+        'device_id': None,
+        'disabled_by': None,
+        'platform': 'test_platform',
         'entity_id': 'test_domain.no_name',
         'name': None
     }
@@ -83,6 +136,10 @@ async def test_update_entity_name(hass, client):
     msg = await client.receive_json()
 
     assert msg['result'] == {
+        'config_entry_id': None,
+        'device_id': None,
+        'disabled_by': None,
+        'platform': 'test_platform',
         'entity_id': 'test_domain.world',
         'name': 'after update'
     }
@@ -120,6 +177,10 @@ async def test_update_entity_no_changes(hass, client):
     msg = await client.receive_json()
 
     assert msg['result'] == {
+        'config_entry_id': None,
+        'device_id': None,
+        'disabled_by': None,
+        'platform': 'test_platform',
         'entity_id': 'test_domain.world',
         'name': 'name of entity'
     }
@@ -179,9 +240,37 @@ async def test_update_entity_id(hass, client):
     msg = await client.receive_json()
 
     assert msg['result'] == {
+        'config_entry_id': None,
+        'device_id': None,
+        'disabled_by': None,
+        'platform': 'test_platform',
         'entity_id': 'test_domain.planet',
         'name': None
     }
 
     assert hass.states.get('test_domain.world') is None
     assert hass.states.get('test_domain.planet') is not None
+
+
+async def test_remove_entity(hass, client):
+    """Test removing entity."""
+    registry = mock_registry(hass, {
+        'test_domain.world': RegistryEntry(
+            entity_id='test_domain.world',
+            unique_id='1234',
+            # Using component.async_add_entities is equal to platform "domain"
+            platform='test_platform',
+            name='before update'
+        )
+    })
+
+    await client.send_json({
+        'id': 6,
+        'type': 'config/entity_registry/remove',
+        'entity_id': 'test_domain.world',
+    })
+
+    msg = await client.receive_json()
+
+    assert msg['success']
+    assert len(registry.entities) == 0

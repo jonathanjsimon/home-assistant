@@ -4,16 +4,18 @@ Add support for the Xiaomi TVs.
 For more details about this platform, please refer to the documentation at
 https://home-assistant.io/components/xiaomi_tv/
 """
-
 import logging
-import voluptuous as vol
-import homeassistant.helpers.config_validation as cv
-from homeassistant.const import (CONF_HOST, CONF_NAME, STATE_OFF, STATE_ON)
-from homeassistant.components.media_player import (
-    SUPPORT_TURN_ON, SUPPORT_TURN_OFF, MediaPlayerDevice, PLATFORM_SCHEMA,
-    SUPPORT_VOLUME_STEP)
 
-REQUIREMENTS = ['pymitv==1.4.0']
+import voluptuous as vol
+
+from homeassistant.components.media_player import (
+    MediaPlayerDevice, PLATFORM_SCHEMA)
+from homeassistant.components.media_player.const import (
+    SUPPORT_TURN_OFF, SUPPORT_TURN_ON, SUPPORT_VOLUME_STEP)
+from homeassistant.const import CONF_HOST, CONF_NAME, STATE_OFF, STATE_ON
+import homeassistant.helpers.config_validation as cv
+
+REQUIREMENTS = ['pymitv==1.4.3']
 
 DEFAULT_NAME = "Xiaomi TV"
 
@@ -41,8 +43,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         # Check if there's a valid TV at the IP address.
         if not Discover().check_ip(host):
             _LOGGER.error(
-                "Could not find Xiaomi TV with specified IP: %s", host
-            )
+                "Could not find Xiaomi TV with specified IP: %s", host)
         else:
             # Register TV with Home Assistant.
             add_entities([XiaomiTV(host, name)])
@@ -93,15 +94,17 @@ class XiaomiTV(MediaPlayerDevice):
         because the TV won't accept any input when turned off. Thus, the user
         would be unable to turn the TV back on, unless it's done manually.
         """
-        self._tv.sleep()
+        if self._state is not STATE_OFF:
+            self._tv.sleep()
 
-        self._state = STATE_OFF
+            self._state = STATE_OFF
 
     def turn_on(self):
         """Wake the TV back up from sleep."""
-        self._tv.wake()
+        if self._state is not STATE_ON:
+            self._tv.wake()
 
-        self._state = STATE_ON
+            self._state = STATE_ON
 
     def volume_up(self):
         """Increase volume by one."""

@@ -1,14 +1,14 @@
 """Provide configuration end points for Z-Wave."""
-import asyncio
+from collections import deque
 import logging
 
-from collections import deque
 from aiohttp.web import Response
-import homeassistant.core as ha
-from homeassistant.const import HTTP_NOT_FOUND, HTTP_OK
-from homeassistant.components.http import HomeAssistantView
+
 from homeassistant.components.config import EditKeyBasedConfigView
-from homeassistant.components.zwave import const, DEVICE_CONFIG_SCHEMA_ENTRY
+from homeassistant.components.http import HomeAssistantView
+from homeassistant.components.zwave import DEVICE_CONFIG_SCHEMA_ENTRY, const
+from homeassistant.const import HTTP_NOT_FOUND, HTTP_OK
+import homeassistant.core as ha
 import homeassistant.helpers.config_validation as cv
 
 _LOGGER = logging.getLogger(__name__)
@@ -16,8 +16,7 @@ CONFIG_PATH = 'zwave_device_config.yaml'
 OZW_LOG_FILENAME = 'OZW_Log.txt'
 
 
-@asyncio.coroutine
-def async_setup(hass):
+async def async_setup(hass):
     """Set up the Z-Wave config API."""
     hass.http.register_view(EditKeyBasedConfigView(
         'zwave', 'device_config', CONFIG_PATH, cv.entity_id,
@@ -41,8 +40,7 @@ class ZWaveLogView(HomeAssistantView):
     name = "api:zwave:ozwlog"
 
 # pylint: disable=no-self-use
-    @asyncio.coroutine
-    def get(self, request):
+    async def get(self, request):
         """Retrieve the lines from ZWave log."""
         try:
             lines = int(request.query.get('lines', 0))
@@ -50,7 +48,7 @@ class ZWaveLogView(HomeAssistantView):
             return Response(text='Invalid datetime', status=400)
 
         hass = request.app['hass']
-        response = yield from hass.async_add_job(self._get_log, hass, lines)
+        response = await hass.async_add_job(self._get_log, hass, lines)
 
         return Response(text='\n'.join(response))
 

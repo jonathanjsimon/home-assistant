@@ -9,12 +9,12 @@ import logging
 import voluptuous as vol
 
 from homeassistant.components.media_player import (
-    SUPPORT_PAUSE, SUPPORT_PLAY_MEDIA, SUPPORT_STOP, SUPPORT_VOLUME_MUTE,
-    SUPPORT_VOLUME_SET, SUPPORT_PLAY, MediaPlayerDevice, PLATFORM_SCHEMA,
-    MEDIA_TYPE_MUSIC)
-
-from homeassistant.const import (CONF_NAME, STATE_IDLE, STATE_PAUSED,
-                                 STATE_PLAYING)
+    MediaPlayerDevice, PLATFORM_SCHEMA)
+from homeassistant.components.media_player.const import (
+    MEDIA_TYPE_MUSIC, SUPPORT_PAUSE, SUPPORT_PLAY,
+    SUPPORT_PLAY_MEDIA, SUPPORT_STOP, SUPPORT_VOLUME_MUTE, SUPPORT_VOLUME_SET)
+from homeassistant.const import (
+    CONF_NAME, STATE_IDLE, STATE_PAUSED, STATE_PLAYING)
 import homeassistant.helpers.config_validation as cv
 import homeassistant.util.dt as dt_util
 
@@ -29,8 +29,8 @@ SUPPORT_VLC = SUPPORT_PAUSE | SUPPORT_VOLUME_SET | SUPPORT_VOLUME_MUTE | \
     SUPPORT_PLAY_MEDIA | SUPPORT_PLAY | SUPPORT_STOP
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
-    vol.Optional(CONF_NAME): cv.string,
     vol.Optional(CONF_ARGUMENTS, default=''): cv.string,
+    vol.Optional(CONF_NAME): cv.string,
 })
 
 
