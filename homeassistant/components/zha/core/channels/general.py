@@ -64,6 +64,13 @@ class OnOffChannel(ZigbeeChannel):
             await self.get_attribute_value(self.ON_OFF, from_cache=from_cache))
         await super().async_initialize(from_cache)
 
+    async def async_update(self):
+        """Initialize channel."""
+        _LOGGER.debug("Attempting to update onoff state")
+        self._state = bool(
+            await self.get_attribute_value(self.ON_OFF, from_cache=False))
+        await super().async_update()
+
 
 class LevelControlChannel(ZigbeeChannel):
     """Channel for the LevelControl Zigbee cluster."""
@@ -126,9 +133,11 @@ class LevelControlChannel(ZigbeeChannel):
 class BasicChannel(ZigbeeChannel):
     """Channel to interact with the basic cluster."""
 
+    UNKNOWN = 0
     BATTERY = 3
+
     POWER_SOURCES = {
-        0: 'Unknown',
+        UNKNOWN: 'Unknown',
         1: 'Mains (single phase)',
         2: 'Mains (3 phase)',
         BATTERY: 'Battery',
@@ -199,4 +208,4 @@ class PowerConfigurationChannel(ZigbeeChannel):
         await self.get_attribute_value(
             'battery_percentage_remaining', from_cache=from_cache)
         await self.get_attribute_value(
-            'active_power', from_cache=from_cache)
+            'battery_voltage', from_cache=from_cache)

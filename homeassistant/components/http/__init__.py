@@ -52,6 +52,20 @@ DEFAULT_SERVER_HOST = '0.0.0.0'
 DEFAULT_DEVELOPMENT = '0'
 NO_LOGIN_ATTEMPT_THRESHOLD = -1
 
+
+def trusted_networks_deprecated(value):
+    """Warn user trusted_networks config is deprecated."""
+    if not value:
+        return value
+
+    _LOGGER.warning(
+        "Configuring trusted_networks via the http component has been"
+        " deprecated. Use the trusted networks auth provider instead."
+        " For instructions, see https://www.home-assistant.io/docs/"
+        "authentication/providers/#trusted-networks")
+    return value
+
+
 HTTP_SCHEMA = vol.Schema({
     vol.Optional(CONF_API_PASSWORD): cv.string,
     vol.Optional(CONF_SERVER_HOST, default=DEFAULT_SERVER_HOST): cv.string,
@@ -66,7 +80,7 @@ HTTP_SCHEMA = vol.Schema({
     vol.Inclusive(CONF_TRUSTED_PROXIES, 'proxy'):
         vol.All(cv.ensure_list, [ip_network]),
     vol.Optional(CONF_TRUSTED_NETWORKS, default=[]):
-        vol.All(cv.ensure_list, [ip_network]),
+        vol.All(cv.ensure_list, [ip_network], trusted_networks_deprecated),
     vol.Optional(CONF_LOGIN_ATTEMPTS_THRESHOLD,
                  default=NO_LOGIN_ATTEMPT_THRESHOLD):
         vol.Any(cv.positive_int, NO_LOGIN_ATTEMPT_THRESHOLD),
@@ -196,6 +210,14 @@ class HomeAssistantHTTP:
             _LOGGER.warning(
                 "legacy_api_password support has been enabled. If you don't "
                 "require it, remove the 'api_password' from your http config.")
+
+        for prv in hass.auth.auth_providers:
+            if prv.type == 'trusted_networks':
+                # auth_provider.trusted_networks will override
+                # http.trusted_networks, http.trusted_networks will be
+                # removed from future release
+                trusted_networks = prv.trusted_networks
+                break
 
         setup_auth(app, trusted_networks,
                    api_password if hass.auth.support_legacy else None)
