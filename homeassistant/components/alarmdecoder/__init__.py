@@ -1,5 +1,6 @@
 """Support for AlarmDecoder devices."""
 import logging
+import os
 
 from datetime import timedelta
 import voluptuous as vol
@@ -23,6 +24,11 @@ CONF_DEVICE_BAUD = 'baudrate'
 CONF_DEVICE_HOST = 'host'
 CONF_DEVICE_PATH = 'path'
 CONF_DEVICE_PORT = 'port'
+CONF_DEVICE_SSL = 'ssl'
+CONF_DEVICE_SELF_SIGNED = 'ssl_self_signed'
+CONF_DEVICE_SSL_CA = 'ssl_ca'
+CONF_DEVICE_SSL_KEY = 'ssl_key'
+CONF_DEVICE_SSL_CERT = 'ssl_cert'
 CONF_DEVICE_TYPE = 'type'
 CONF_PANEL_DISPLAY = 'panel_display'
 CONF_ZONE_NAME = 'name'
@@ -36,6 +42,11 @@ CONF_RELAY_CHAN = 'relaychan'
 DEFAULT_DEVICE_TYPE = 'socket'
 DEFAULT_DEVICE_HOST = 'localhost'
 DEFAULT_DEVICE_PORT = 10000
+DEFAULT_DEVICE_SSL = False
+DEFAULT_DEVICE_SELF_SIGNED = False
+DEFAULT_DEVICE_SSL_CA = 'ca.pem'
+DEFAULT_DEVICE_SSL_KEY = 'client.key'
+DEFAULT_DEVICE_SSL_CERT = 'client.pem'
 DEFAULT_DEVICE_PATH = '/dev/ttyUSB0'
 DEFAULT_DEVICE_BAUD = 115200
 
@@ -56,7 +67,15 @@ SIGNAL_REL_MESSAGE = 'alarmdecoder.rel_message'
 DEVICE_SOCKET_SCHEMA = vol.Schema({
     vol.Required(CONF_DEVICE_TYPE): 'socket',
     vol.Optional(CONF_DEVICE_HOST, default=DEFAULT_DEVICE_HOST): cv.string,
-    vol.Optional(CONF_DEVICE_PORT, default=DEFAULT_DEVICE_PORT): cv.port})
+    vol.Optional(CONF_DEVICE_PORT, default=DEFAULT_DEVICE_PORT): cv.port,
+    vol.Optional(CONF_DEVICE_SSL, default=DEFAULT_DEVICE_SSL): cv.boolean,
+    vol.Optional(CONF_DEVICE_SELF_SIGNED,
+                 default=DEFAULT_DEVICE_SELF_SIGNED): cv.boolean,
+    vol.Optional(CONF_DEVICE_SSL_CA, default=DEFAULT_DEVICE_SSL_CA): cv.string,
+    vol.Optional(CONF_DEVICE_SSL_KEY,
+                 default=DEFAULT_DEVICE_SSL_KEY): cv.string,
+    vol.Optional(CONF_DEVICE_SSL_CERT,
+                 default=DEFAULT_DEVICE_SSL_CERT): cv.string})
 
 DEVICE_SERIAL_SCHEMA = vol.Schema({
     vol.Required(CONF_DEVICE_TYPE): 'serial',
@@ -167,7 +186,32 @@ def setup(hass, config):
     if device_type == 'socket':
         host = device.get(CONF_DEVICE_HOST)
         port = device.get(CONF_DEVICE_PORT)
-        controller = AlarmDecoder(SocketDevice(interface=(host, port)))
+
+        socket_device = SocketDevice(interface=(host, port))
+
+        ssl = device.get(CONF_DEVICE_SSL)
+        if ssl:
+            ssl_ca = device.get(CONF_DEVICE_SSL_CA)
+            ssl_key = device.get(CONF_DEVICE_SSL_KEY)
+            ssl_cert = device.get(CONF_DEVICE_SSL_CERT)
+            ssl_allow_self_signed = device.get(CONF_DEVICE_SELF_SIGNED)
+
+            if not os.path.isabs(ssl_ca):
+                ssl_ca = hass.config.path(ssl_ca)
+
+            if not os.path.isabs(ssl_key):
+                ssl_key = hass.config.path(ssl_key)
+
+            if not os.path.isabs(ssl_cert):
+                ssl_cert = hass.config.path(ssl_cert)
+
+            socket_device.ssl = True
+            socket_device.ssl_ca = ssl_ca.encode('utf-8')
+            socket_device.ssl_key = ssl_key.encode('utf-8')
+            socket_device.ssl_certificate = ssl_cert.encode('utf-8')
+            socket_device.ssl_allow_self_signed = ssl_allow_self_signed
+
+        controller = AlarmDecoder(socket_device)
     elif device_type == 'serial':
         path = device.get(CONF_DEVICE_PATH)
         baud = device.get(CONF_DEVICE_BAUD)
